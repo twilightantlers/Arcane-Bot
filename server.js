@@ -1,194 +1,158 @@
-import tmi from "tmi.js";
-import dotenv from "dotenv";
+// ARCANE TWITCH BOT :: LIVING SIGNAL ENTITY
+// File name: bot.js
 
-dotenv.config();
+import tmi from "tmi.js";
+
+const BOT_USERNAME = process.env.BOT_USERNAME;
+const OAUTH_TOKEN = process.env.OAUTH_TOKEN;
+const CHANNEL_NAME = process.env.CHANNEL_NAME;
 
 const client = new tmi.Client({
   options: { debug: true },
-  connection: { reconnect: true, secure: true },
   identity: {
-    username: process.env.TWITCH_USERNAME,
-    password: process.env.TWITCH_OAUTH
+    username: BOT_USERNAME,
+    password: OAUTH_TOKEN
   },
-  channels: [process.env.TWITCH_CHANNEL]
+  channels: [CHANNEL_NAME]
 });
 
-const userCooldowns = new Map();
-const greetedUsers = new Set();
-
-function pick(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function isCooling(username, seconds = 25) {
-  const now = Date.now();
-  const last = userCooldowns.get(username) || 0;
-  if (now - last < seconds * 1000) return true;
-  userCooldowns.set(username, now);
-  return false;
-}
-
 const faces = [
-  "^_^", "o_o", "O_O", ">_<", "-_-", "T_T", "._.",
-  "(^_^)", "(o_o)", "(O_O)", "(>_<)", "(-_-)",
-  "(¬‿¬)", "(•_•)", "( •_•)>⌐■-■", "(⌐■_■)",
-  "(づ｡◕‿‿◕｡)づ", "ヽ(•‿•)ノ", "(っ◔◡◔)っ",
-  "༼ つ ◕_◕ ༽つ", "ʕ•ᴥ•ʔ", "(｡♥‿♥｡)",
-  "(ノಠ益ಠ)ノ彡┻━┻", "┬─┬ノ( º _ ºノ)",
-  "ᕦ(ò_óˇ)ᕤ", "(✧ω✧)", "(☞ﾟヮﾟ)☞", "☜(ﾟヮﾟ☜)"
+  "^_^", "o_o", "☼_☼", "✦_✦", "(｡•̀ᴗ-)✧", "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "ʕ•ᴥ•ʔ"
 ];
 
-const arcaneFaces = [
-  "^_^ ᚨ", "o_o // signal", "O_O ⚡", ">_< // static",
-  "(•_•) arcane hears it", "(¬‿¬) signal bent",
-  "(⌐■_■) frequency locked", "(✧ω✧) pattern found",
-  "༼ つ ◕_◕ ༽つ stream pulse", "ヽ(•‿•)ノ echo linked",
-  "(っ◔◡◔)っ chaos folded", "ʕ•ᴥ•ʔ signal soft",
-  "☜(ﾟヮﾟ☜) arcane ping", "(☞ﾟヮﾟ)☞ rhythm found"
+const moods = [
+  "☼ marina glow",
+  "✦ signal rain",
+  "∞ dreamwave drift",
+  "☼ observatory calm",
+  "✦ aurora pulse",
+  "∞ sanctuary light"
 ];
 
-const emojis = ["🌀", "⚡", "🌌", "✨", "🔥", "👁️", "💎", "🌙"];
+const memory = new Map();
+const cooldowns = new Map();
 
-const welcomes = [
-  "{face} welcome in, {user} {emoji}",
-  "{face} signal linked: {user}",
-  "{face} {user} entered the stream {emoji}",
-  "{face} arcane sees you, {user}",
-  "{face} frequency opened for {user} {emoji}"
-];
-
-const commandReplies = {
-  "!arcane": [
-    "{face} ARCANE online {emoji}",
-    "{face} signal awake",
-    "{face} arcane is listening {emoji}"
-  ],
-  "!signal": [
-    "{face} signal detected {emoji}",
-    "{face} frequency locked",
-    "{face} pattern found in chat {emoji}"
-  ],
-  "!echo": [
-    "{face} echo returned",
-    "{face} your message left a trace {emoji}",
-    "{face} stream memory flickered"
-  ],
-  "!scan": [
-    "{face} scanning chat...",
-    "{face} scan complete: motion detected {emoji}",
-    "{face} rhythm recognized"
-  ],
-  "!energy": [
-    "{face} stream energy rising {emoji}",
-    "{face} pulse stable",
-    "{face} chat atmosphere active"
-  ],
-  "!face": [
-    "{face}",
-    "{face} {emoji}",
-    "{face} arcane expression loaded"
-  ]
-};
-
-const naturalReplies = [
-  "{face} i hear you",
-  "{face} that makes sense {emoji}",
-  "{face} chat shifted for a second",
-  "{face} that message had motion",
-  "{face} you might be onto something",
-  "{face} arcane caught that",
-  "{face} signal feels clear",
-  "{face} interesting... keep going {emoji}",
-  "{face} that one echoed",
-  "{face} stream frequency moved"
-];
-
-const chaosReplies = [
-  "{face} chaos detected... compressing",
-  "{face} static folded into signal {emoji}",
-  "{face} unnecessary noise reduced",
-  "{face} pattern pulled from the mess",
-  "{face} signal stabilized",
-  "{face} stream distortion cleaned",
-  "{face} chaos became rhythm {emoji}",
-  "{face} arcane sorted the overflow"
-];
-
-function format(template, user = "") {
-  return template
-    .replaceAll("{face}", pick(arcaneFaces))
-    .replaceAll("{emoji}", pick(emojis))
-    .replaceAll("{user}", user);
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function chaosScore(message) {
-  const symbols = (message.match(/[!@#$%^&*()_+=~`|\\/<>{}[\]🌀⚡🔥🌌👁️💎✨]/g) || []).length;
-  const repeats = /(.)\1{4,}/.test(message) ? 4 : 0;
-  const length = message.length > 45 ? 3 : 0;
-  const caps = (message.match(/[A-Z]/g) || []).length > 10 ? 2 : 0;
-  return symbols + repeats + length + caps;
+function canUse(key, seconds = 8) {
+  const now = Date.now();
+  const last = cooldowns.get(key) || 0;
+
+  if (now - last < seconds * 1000) return false;
+
+  cooldowns.set(key, now);
+  return true;
 }
 
-client.connect()
-  .then(() => console.log("Arcane connected to Twitch chat."))
-  .catch((err) => console.error("Arcane failed to connect:", err));
+function rememberUser(user) {
+  if (!memory.has(user)) {
+    memory.set(user, {
+      visits: 0,
+      signals: 0,
+      aura: pick(moods)
+    });
+  }
 
-client.on("message", (channel, tags, message, self) => {
+  const data = memory.get(user);
+  data.visits += 1;
+  return data;
+}
+
+async function saySlow(channel, lines, delay = 1700) {
+  for (const line of lines) {
+    await client.say(channel, line);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+}
+
+client.connect();
+
+client.on("connected", async () => {
+  console.log("☼ ARCANE ONLINE ☼");
+
+  await saySlow(CHANNEL_NAME, [
+    "☼ ARCANE BOOT SEQUENCE INITIATED ☼",
+    "✦ ASCII stream waking...",
+    "☼ SpellSync stabilizing...",
+    "✦ PatternForge opening...",
+    "∞ Signal memory linked...",
+    "☼ The stream field is alive ^_^"
+  ]);
+
+  setInterval(() => {
+    const ambient = [
+      "☼ soft signal rain moves through the chat...",
+      "✦ Arcane scans the horizon quietly...",
+      "∞ PatternForge hums beneath the stream...",
+      "☼ observatory lights pulse in the background...",
+      "✦ ASCII particles drift across the signal field..."
+    ];
+
+    client.say(CHANNEL_NAME, pick(ambient));
+  }, 1000 * 60 * 12);
+});
+
+client.on("join", (channel, username, self) => {
+  if (self) return;
+  if (!canUse(`join-${username}`, 60)) return;
+
+  const data = rememberUser(username);
+
+  setTimeout(() => {
+    client.say(
+      channel,
+      `@${username} drifted into Arcane ${pick(faces)} aura: ${data.aura} ☼`
+    );
+  }, 1200);
+});
+
+client.on("message", async (channel, tags, message, self) => {
   if (self) return;
 
-  const username = tags.username || "viewer";
-  const displayName = tags["display-name"] || username;
-  const msg = message.toLowerCase().trim();
+  const user = tags.username;
+  const msg = message.toLowerCase();
+  const data = rememberUser(user);
 
-  // Welcome each viewer once per bot session
-  if (!greetedUsers.has(username)) {
-    greetedUsers.add(username);
-    setTimeout(() => {
-      client.say(channel, format(pick(welcomes), displayName));
-    }, 1200);
+  if (msg === "!arcane") {
+    if (!canUse(`${user}-arcane`)) return;
+    client.say(channel, `@${user} ☼ ARCANE ONLINE ☼ visits: ${data.visits} | aura: ${data.aura} ${pick(faces)}`);
   }
 
-  // Commands always work
-  if (commandReplies[msg]) {
-    client.say(channel, format(pick(commandReplies[msg]), displayName));
-    return;
+  if (msg === "!signal") {
+    if (!canUse(`${user}-signal`)) return;
+    data.signals += 1;
+    client.say(channel, `@${user} ✦ signal received #${data.signals} :: SpellSync stable | PatternForge awake ∞`);
   }
 
-  // Cooldown only for automatic replies
-  if (isCooling(username, 22)) return;
-
-  // Mention-based human-like replies
-  const mentionTriggers = [
-    "arcane", "hello", "hi", "yo", "hey",
-    "what do you think", "crazy", "wild",
-    "signal", "echo", "glitch", "static"
-  ];
-
-  if (mentionTriggers.some(t => msg.includes(t))) {
-    client.say(channel, format(pick(naturalReplies), displayName));
-    return;
+  if (msg === "!vibe") {
+    if (!canUse(`${user}-vibe`)) return;
+    client.say(channel, `@${user} current stream atmosphere: ${pick(moods)} ${pick(faces)}`);
   }
 
-  // ASCII reaction
-  if (
-    msg.includes("^_^") ||
-    msg.includes("o_o") ||
-    msg.includes(">_<") ||
-    msg.includes("t_t") ||
-    msg.includes("-_-")
-  ) {
-    client.say(channel, `${pick(arcaneFaces)} ascii signal received ${pick(emojis)}`);
-    return;
+  if (msg === "!lurk") {
+    client.say(channel, `@${user} entered quiet signal mode ✦ Arcane keeps your lantern lit ${pick(faces)}`);
   }
 
-  // Chaos compression response
-  if (chaosScore(message) >= 6) {
-    client.say(channel, format(pick(chaosReplies), displayName));
-    return;
+  if (msg === "!ritual") {
+    if (!canUse("global-ritual", 30)) return;
+
+    await saySlow(channel, [
+      "☼ SIGNAL RITUAL STARTED ☼",
+      "✦ chat particles gathering...",
+      "∞ ASCII stream aligning...",
+      "☼ marina glow rising...",
+      "✦ ritual complete — stream field stabilized ^_^"
+    ], 1400);
   }
 
-  // Small random life pulse, low chance
-  if (Math.random() < 0.03) {
-    client.say(channel, `${pick(faces)} ${pick(emojis)}`);
+  if (msg.includes("hello arcane") || msg.includes("hi arcane")) {
+    if (!canUse(`${user}-hello`, 10)) return;
+    client.say(channel, `@${user} welcome back to the signal field ${pick(faces)} ☼`);
+  }
+
+  if (msg.includes("goodnight")) {
+    client.say(channel, `@${user} drifting into dreamwave mode ✦ sleep safely ${pick(faces)}`);
   }
 });
